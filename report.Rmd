@@ -1,6 +1,6 @@
 ---
-title: 'Assignment 2 – Part A: PRML Project'
-author: "Md. Zunaed Mazumdar"
+title: 'Weather Prediction in Canberra using Machine learning'
+author: "Bashirul Alam"
 date: "`r Sys.Date()`"
 output: pdf_document
 ---
