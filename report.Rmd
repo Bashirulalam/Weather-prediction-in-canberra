@@ -1,0 +1,298 @@
+---
+title: 'Assignment 2 – Part A: PRML Project'
+author: "Md. Zunaed Mazumdar"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+## Data Selection
+
+I selected the Australian weather dataset from Kaggle. The original training set contained 99,516 observations with 23 variables, while the testing set had 42,677 observations with 22 variables. After performing data cleaning and preprocessing, the training set was reduced to 2,225 observations with 9 features, and the testing set to 960 observations.
+
+## Data Preparation
+
+```{r message=FALSE, warning=FALSE}
+#loading necessary libraries
+library(dplyr)
+library(tidyr) 
+library(ggplot2)
+library(caret)
+```
+
+
+Now, i will perform the data cleaning and data prepration. In our original data set we have data for many region in Australia, but i will select only the data for the Canberra region. I will drop some variables which are not necessary for our analysis
+
+```{r, warning=FALSE, echo=FALSE, message=FALSE}
+df_test <- read.csv("Weather Test Data.csv")
+df_train <- read.csv("Weather Training Data.csv")
+
+## Slelecting the data only for canberra city
+
+canb_test <- df_test %>%
+  filter(Location == "Canberra")
+
+canb_train <- df_train %>%
+  filter(Location == "Canberra")
+
+tr_df <- canb_train %>%
+  select(-row.ID, -Location, -WindGustDir, -WindGustSpeed, -WindDir9am, -WindDir3pm,
+         -Temp9am, -Temp3pm)
+
+ts_df <- canb_test %>%
+  select(-row.ID, -Location, -WindGustDir, -WindGustSpeed, -WindDir9am, -WindDir3pm,
+         -Temp9am, -Temp3pm)
+
+
+train <- tr_df %>%
+  mutate(
+    TempAvg = rowMeans(select(., MaxTemp, MinTemp), na.rm = TRUE),
+    WindSpeedAvg = rowMeans(select(., WindSpeed3pm, WindSpeed9am), na.rm = TRUE),
+    HumidityAvg = rowMeans(select(., Humidity3pm, Humidity9am), na.rm = TRUE),
+    PressureAvg = rowMeans(select(., Pressure3pm, Pressure9am), na.rm = TRUE),
+    CloudAvg = rowMeans(select(., Cloud3pm, Cloud9am), na.rm = TRUE)
+  )
+
+test <- ts_df %>%
+  mutate(
+    TempAvg = rowMeans(select(., MaxTemp, MinTemp), na.rm = TRUE),
+    WindSpeedAvg = rowMeans(select(., WindSpeed3pm, WindSpeed9am), na.rm = TRUE),
+    HumidityAvg = rowMeans(select(., Humidity3pm, Humidity9am), na.rm = TRUE),
+    PressureAvg = rowMeans(select(., Pressure3pm, Pressure9am), na.rm = TRUE),
+    CloudAvg = rowMeans(select(., Cloud3pm, Cloud9am), na.rm = TRUE)
+  )
+
+train <- train %>%
+  select(-MaxTemp, -MinTemp, -WindSpeed3pm, -WindSpeed9am, -Humidity3pm, -Humidity9am,
+         -Pressure3pm, -Pressure9am, -Cloud3pm, -Cloud9am, -CloudAvg)
+
+test <- test %>%
+  select(-MaxTemp, -MinTemp, -WindSpeed3pm, -WindSpeed9am, -Humidity3pm, -Humidity9am,
+         -Pressure3pm, -Pressure9am, -Cloud3pm, -Cloud9am, -CloudAvg)
+
+
+```
+
+After performing the data cleaning, we found our final dataset.
+
+```{r}
+dim(train)
+dim(test)
+
+```
+
+### Removing the missing value 
+
+Now, i will check if i have any missing value in my final data set.
+
+```{r}
+colSums(is.na(train))
+
+```
+
+I found that, Evaporation and Sunshine has more than 1000 missing value, so i will drop this variable. Rainfall, Raintoday, windspeedAvg, pressureAvg has 13, 13, 153 and 152 missing values respectiably. Now i will remove the missing value from the data set.
+
+```{r}
+train <- train %>%
+  select(-Evaporation, -Sunshine)
+
+test <- test %>%
+   select(-Evaporation, -Sunshine)
+```
+
+
+```{r}
+train <- train %>% 
+  drop_na(WindSpeedAvg, PressureAvg, Rainfall, RainToday, HumidityAvg)
+test  <- test %>% 
+  drop_na(WindSpeedAvg, PressureAvg, Rainfall, RainToday)
+
+dim(train)
+dim(test)
+```
+
+## Explanatory data analysis
+
+Now i will check the correlation between the variables in our final dataset.
+
+```{r}
+num_train <- train %>% 
+  select(where(is.numeric))
+
+cor_mat <- cor(num_train, use = "pairwise.complete.obs")
+
+heatmap(cor_mat)
+
+```
+
+
+
+
+We can see from the correlation heatmap, humidity, windpressure has strong correlation with rainfall and raintomorrow.
+
+Now i will check the boxplot of the features and rain tomorrow.
+
+```{r, warning=FALSE}
+df_long <- train %>%
+  select(RainTomorrow, TempAvg, WindSpeedAvg, HumidityAvg, PressureAvg) %>%
+  pivot_longer(cols = c(TempAvg, WindSpeedAvg, HumidityAvg, PressureAvg),
+               names_to = "Feature", values_to = "Value")
+
+# plot with facets
+ggplot(df_long, aes(x = RainTomorrow, y = Value, fill = RainTomorrow)) +
+  geom_boxplot() +
+  facet_wrap(~ Feature, scales = "free_y") +
+  labs(title = "Boxplots of Features vs RainTomorrow",
+       x = "Rain Tomorrow", y = "Value") +
+  theme_bw()
+
+```
+
+The boxplots compare the distributions of average temperature, wind speed,humidity, and pressure for days with and without rain. Humidity is generally higher and pressureslightly lower on rainy days, while temperature tends to be lower when it rains. Wind speed shows more variability on rainy days, suggesting these features may carry predictive power for rainfall.
+
+
+
+### Data distribution of the variables
+
+
+
+```{r}
+# Select numeric variables only
+num_vars <- train %>% select(where(is.numeric))
+
+# Reshape to long format
+df_long <- num_vars %>%
+  pivot_longer(cols = everything(), names_to = "Feature", values_to = "Value")
+
+# Plot histograms for all numeric features
+ggplot(df_long, aes(x = Value)) +
+  geom_histogram(bins = 30, fill = "skyblue", color = "black") +
+  facet_wrap(~ Feature, scales = "free") +
+  labs(title = "Distributions of Numeric Features", x = "Value", y = "Count") +
+  theme_bw()
+```
+
+The histograms show that most features are approximately symmetric and bell-shaped,such as HumidityAvg and PressureAvg, while TempAvg is fairly spread but still close to normal. WindSpeedAvg is slightly right-skewed, with more lower values and fewer high speeds. Rainfall is highly right-skewed, with the majority of days´having no or very little rain
+
+
+## Algorithm Selection and Justification.
+
+We have select **Linear regression** to model the temp and **Logistic regression** to model the raintoday.
+
+We selected linear regression to model the temparature because it is a widely used and interpretable method for predicting continuous outcomes. It allows us to examine how weather variables such as rainfall, humidity, pressure, and wind speed contribute to temparature levels. Linear regression provides straightforward coefficient estimates, making the relationships between predictors and temparature easy to understand and communicate.
+
+For predicting RainToday, we used logistic regression since the target variable is binary (Yes/No). Logistic regression is the standard choice for classification problems of this nature, as it estimates the probability of rainfall occurring on a given day. The method ensures probability outputs between 0 and 1 and enables evaluation using metrics such as accuracy, sensitivity, and ROC analysis.
+
+
+## Model implementation
+
+### Linear Regression
+
+First we will implement the linear regression to model the tempAvg.
+
+```{r}
+model_temp <- lm(TempAvg ~ HumidityAvg + WindSpeedAvg + PressureAvg + Rainfall,
+                 data = train)
+
+summary(model_temp)
+
+```
+
+The linear regression model for TempAvg is statistically significant (p < 2.2e-16) with an R² of about 0.37, meaning it explains roughly 37% of the variability in temperature. All predictors are highly significant, with humidity, wind speed, and pressure showing negative associations with temperature, while rainfall has a small positive effect. The residual standard error of 4.8 indicates an average deviation of around 5°C, suggesting moderate predictive accuracy but also room for improvement with more complex models.
+
+
+
+
+Now we will use the test dataset to see how the model perform to test data.
+
+```{r}
+pred_temp <- predict(model_temp, newdata = test)
+
+
+####### evalutaing the model
+
+actual_temp <- test$TempAvg
+
+# RMSE
+rmse <- sqrt(mean((pred_temp - actual_temp)^2, na.rm = TRUE))
+
+# MAE
+mae <- mean(abs(pred_temp - actual_temp), na.rm = TRUE)
+
+# R-squared
+SSE <- sum((pred_temp - actual_temp)^2, na.rm = TRUE)
+SST <- sum((actual_temp - mean(actual_temp, na.rm = TRUE))^2, na.rm = TRUE)
+rsq <- 1 - SSE/SST
+
+list(RMSE = rmse, MAE = mae, R2 = rsq)
+
+```
+
+The model’s performance on the test data shows an RMSE of about 4.7 and an MAE of about 3.9, meaning predictions deviate from actual temperatures by roughly 4–5°C on average. The R² of 0.41 indicates the model explains around 41% of the variance in unseen data. This suggests the model generalizes reasonably well, though its predictive power is moderate and could be improved with additional features or more flexible models.
+
+
+
+### Logistic regreesion
+
+Now, i will use the logistic regression to model the probability of raining today.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+train$RainToday <- as.factor(train$RainToday)
+test$RainToday  <- as.factor(test$RainToday)
+
+
+```
+
+
+```{r}
+log_model_today <- glm(RainToday ~ TempAvg + WindSpeedAvg + HumidityAvg + PressureAvg,
+                       data = train,
+                       family = binomial)
+
+summary(log_model_today)
+
+```
+
+The logistic regression model for RainToday is highly significant, with all predictors contributing meaningfully (p < 0.001). Higher temperature, wind speed, and humidity increase the likelihood of rainfall today, while higher pressure reduces it, which aligns with meteorological expectations. The drop in deviance from 2068.6 to 1534.7 and the AIC of 1544.7 indicate a substantial improvement over the null model, suggesting the predictors have good explanatory power.
+
+
+
+Now i will use the model to predict the temp in our testing dataset and evaluate the model performance using confushion matrix.
+
+```{r}
+pred_prob <- predict(log_model_today, newdata = test, type = "response")
+
+# Convert to Yes/No with threshold 0.5
+pred_class <- ifelse(pred_prob > 0.5, "Yes", "No")
+
+
+confusionMatrix(as.factor(pred_class), test$RainToday, positive = "Yes")
+```
+
+The logistic regression model achieves an overall accuracy of about 83%, which is better than the no-information rate. However, the sensitivity is low (34%), meaning it misses many rainy days, while the specificity is high (95%), showing it correctly identifies non-rainy days. This indicates the model is biased toward predicting “No Rain,” which is expected given the class imbalance, and improvements may require resampling techniques or alternative models.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
